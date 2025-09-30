@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 import os
+import logging
 
 load_dotenv()
 
@@ -10,14 +11,22 @@ from services.bot_logic import process_message
 app = Flask(__name__)
 provider = get_provider()
 
+# Логи — сразу в stdout
+logging.basicConfig(level=logging.INFO)
+log = app.logger
+
 @app.route("/", methods=["GET"])
 def index():
     return "Bot is running!"
     
+@app.route("/health", methods=["GET"])
+def health():
+    # удобная проверка что задеплоено
+    return jsonify({"status": "ok"}), 200
+    
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        #data = request.json
         data = request.get_json(force=True, silent=True)  # надежнее
         print("RAW IN:", data)   
 
