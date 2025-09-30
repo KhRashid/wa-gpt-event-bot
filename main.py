@@ -20,8 +20,8 @@ def webhook():
         data = request.json
         message = provider.parse_incoming(data)
         if message:
-            response = process_message(message['text'])
-            provider.send_message(message['chat_id'], response)
+            reply = process_message(message['text'])
+            provider.send_message(message['chat_id'], reply)
         return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)})
