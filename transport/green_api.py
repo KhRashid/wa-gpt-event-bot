@@ -16,4 +16,6 @@ class GreenAPI:
             "chatId": chat_id,
             "message": message
         }
+        print("SEND PAYLOAD:", payload)  # <=== лог
         requests.post(url, json=payload)
+        print("RESPONSE:", response.status_code, response.text)  # <=== лог
