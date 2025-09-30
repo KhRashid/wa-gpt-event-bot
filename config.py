@@ -1,0 +1,6 @@
+import os
+
+USE_PROVIDER = os.getenv("USE_PROVIDER", "green")
+GREEN_API_INSTANCE_ID = os.getenv("GREEN_API_INSTANCE_ID")
+GREEN_API_TOKEN = os.getenv("GREEN_API_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")

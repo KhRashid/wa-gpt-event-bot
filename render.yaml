@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: whatsapp-gpt-bot
+    env: python
+    buildCommand: ""
+    startCommand: "python main.py"
+    envVars:
+      - key: USE_PROVIDER
+        value: green
+      - key: GREEN_API_INSTANCE_ID
+        value: 7105331688
+      - key: GREEN_API_TOKEN
+        value: d4fec557a4384e5fb33b9fe0c637d271a48c71b7c8d540de8e
