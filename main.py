@@ -10,6 +10,10 @@ from services.bot_logic import process_message
 app = Flask(__name__)
 provider = get_provider()
 
+@app.route("/", methods=["GET"])
+def index():
+    return "Bot is running!"
+    
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
