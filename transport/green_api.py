@@ -22,14 +22,19 @@ class GreenAPI:
 
     def send_message(self, chat_id, message):
         url = f'https://api.green-api.com/waInstance{GREEN_API_INSTANCE_ID}/sendMessage/{GREEN_API_TOKEN}'
-        payload = {
-            "chatId": chat_id,
-            "message": message
-        }
+        payload = {"chatId": chat_id, "message": message}
         try:
             print("SEND PAYLOAD:", payload)                 # лог
             resp = requests.post(url, json=payload, timeout=15)
             print("RESPONSE:", resp.status_code, resp.text) # лог
+            if resp.status_code == 466:
+                try:
+                    info = resp.json()
+                    allowed = info.get("correspondentsStatus", {}).get("description", "")
+                    print("GREEN-API 466. Allowed now:", allowed)
+                except Exception:
+                    pass
+                return False            
             resp.raise_for_status()
             return True
         except Exception as e:
