@@ -28,7 +28,8 @@ def webhook():
             reply = process_message(message['text'])
             print("REPLY:", reply)                        # <— лог ответа GPT
             
-            provider.send_message(message['chat_id'], reply)
+            #provider.send_message(message['chat_id'], reply)
+            ok = provider.send_message(message['chat_id'], reply)
             print("SEND RESULT:", ok)                     # <— лог результата отправки
             
         return jsonify({'status': 'ok'})
