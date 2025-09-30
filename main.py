@@ -17,13 +17,23 @@ def index():
 @app.route('/webhook', methods=['POST'])
 def webhook():
     try:
-        data = request.json
+        #data = request.json
+        data = request.get_json(force=True, silent=True)  # надежнее
+        print("RAW IN:", data)   
+
         message = provider.parse_incoming(data)
+        print("PARSED:", message)                         # <— лог результата парсинга
+
         if message:
             reply = process_message(message['text'])
+            print("REPLY:", reply)                        # <— лог ответа GPT
+            
             provider.send_message(message['chat_id'], reply)
+            print("SEND RESULT:", ok)                     # <— лог результата отправки
+            
         return jsonify({'status': 'ok'})
     except Exception as e:
+        print("WEBHOOK ERROR:", e)
         return jsonify({'status': 'error', 'message': str(e)})
 
 if __name__ == '__main__':
