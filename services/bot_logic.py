@@ -6,7 +6,7 @@ openai.api_key = OPENAI_API_KEY
 def process_message(text):
     try:
         response = openai.ChatCompletion.create(
-            model="gpt-4",
+            model="gpt-5-mini",
             messages=[
                 {"role": "system", "content": "Ты — помощник по организации мероприятий."},
                 {"role": "user", "content": text}
