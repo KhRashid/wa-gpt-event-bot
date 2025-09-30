@@ -1,10 +1,11 @@
-import openai import OpenAI
+from openai import OpenAI
 from config import OPENAI_API_KEY
 
 #openai.api_key = OPENAI_API_KEY
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-def process_message(text):
+#def process_message(text):
+def process_message(text: str) -> str:
     try:
         #response = openai.ChatCompletion.create(
         resp = client.chat.completions.create(
