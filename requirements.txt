@@ -1,6 +1,17 @@
 flask
 python-dotenv
-openai>=1.0.0
 requests
+
+# OpenAI SDK (новый, под наш bot_logic.py)
+openai>=1.0.0
+
+# Twilio для WhatsApp
+twilio>=9.0.0
+
+# Firestore (хранение истории и тикетов)
+#google-cloud-firestore>=2.16.0
 google-cloud-firestore
+
+# (необязательно, но полезно на проде)
+gunicorn
 orjson
