@@ -52,9 +52,11 @@ def health():
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    """Основной вход из Green-API (входящие сообщения WhatsApp)."""
+    """Входящие сообщения: Twilio (form-urlencoded) и Green-API (JSON)."""
     try:
-        data = request.get_json(force=True, silent=True)
+        # Twilio присылает form; Green — JSON. Берём form в приоритете.
+        form = request.form.to_dict() if request.form else {}
+        data = form or request.get_json(force=True, silent=True) or {}
         log.info("RAW IN: %s", data)
 
         message = provider.parse_incoming(data)
@@ -70,7 +72,7 @@ def webhook():
         lang = detect_lang(text)
         upsert_chat(chat_id, lang=lang)
 
-        # если уже эскалировано — бот не отвечает, только пишем входящее
+        # уже эскалировано — только пишем входящее
         chat_meta = get_chat(chat_id) or {}
         if chat_meta.get("state") == "ESCALATED":
             save_message(chat_id, "user", text)
@@ -82,7 +84,7 @@ def webhook():
             provider.send_message(chat_id, "Переключаю вас на специалиста. Он скоро ответит 🙏")
             return jsonify({"status": "ok"})
 
-        # обычный режим: сохраняем → спрашиваем GPT с контекстом → отвечаем → сохраняем
+        # обычный режим: история → GPT → ответ
         save_message(chat_id, "user", text)
         reply = process_message_with_context(chat_id, text, lang=lang)
         log.info("REPLY: %s", reply)
