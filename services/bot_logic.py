@@ -20,7 +20,7 @@ def _make_header(filters: dict) -> str:
     if budget:
         parts.append(f"с бюджетом до {budget} манат на человека")
     return " ".join(parts).strip() + ":"
-
+'''
 def _format_compact_list(data: dict, max_items: int | None = None) -> str:
     items = data.get("items", []) or []
     if max_items:
@@ -70,6 +70,65 @@ SYSTEM_PROMPT = {
         "Sonda 'Filtrlər: …' və (əgər API-dən gəlibsə) 'Shortlist: <url>' əlavə et."
     )
 }
+'''
+
+#--------------------------------------------------------------------------------------
+def _extract_items(payload: dict) -> list:
+    """Пытаемся найти список карточек в разных типичных местах ответа."""
+    if not isinstance(payload, dict):
+        return []
+    candidates = [
+        payload.get("items"),
+        payload.get("venues"),
+        payload.get("results"),
+        (payload.get("data") or {}).get("items"),
+        (payload.get("data") or {}).get("venues"),
+    ]
+    for c in candidates:
+        if isinstance(c, list) and len(c) > 0:
+            return c
+    return []
+
+def _get(v: dict, *keys, default=None):
+    for k in keys:
+        if k in v and v[k] not in (None, ""):
+            return v[k]
+    return default
+
+def _format_compact_list(data: dict, max_items: int | None = None) -> str:
+    items = _extract_items(data)
+    if max_items:
+        items = items[:max_items]
+
+    filters_used = data.get("filters_used", {}) or {}
+    lines = [_make_header(filters_used)]
+
+    for i, v in enumerate(items, 1):
+        name = _get(v, "name", "title", default="?")
+        district = _get(v, "district", "area", "location", default="?")
+
+        # Вместимость: пытаемся собрать min–max из разных схем
+        cap_min = _get(v, "capacity_min", "min_capacity", "capacityMin",
+                          default=_get(v.get("capacity", {}) if isinstance(v.get("capacity"), dict) else {}, "min", default="?"))
+        cap_max = _get(v, "capacity_max", "max_capacity", "capacityMax",
+                          default=_get(v.get("capacity", {}) if isinstance(v.get("capacity"), dict) else {}, "max", default="?"))
+
+        # Цена/гость
+        price_min = _get(v, "price_per_guest_min", "ppg_min", "priceMin",
+                            default=_get(v.get("price_per_guest", {}) if isinstance(v.get("price_per_guest"), dict) else {}, "min", default="?"))
+        price_max = _get(v, "price_per_guest_max", "ppg_max", "priceMax",
+                            default=_get(v.get("price_per_guest", {}) if isinstance(v.get("price_per_guest"), dict) else {}, "max", default="?"))
+
+        lines.append(f"{i}. {name} — {district} — {cap_min}–{cap_max} мест — ~{price_min}–{price_max} AZN/гость")
+
+    link = data.get("shortlist_url") or data.get("link") or ""
+    if link:
+        lines.append("")
+        lines.append("Для просмотра каталога выбранных площадок, пожалуйста, перейдите по ссылке:")
+        lines.append(link)
+
+    return "\n".join(lines)
+#--------------------------------------------------------------------------------------
 
 def build_messages(chat_id: str, user_text: str, lang: str = "az", max_turns: int = 10):
     history = get_history(chat_id, limit=max_turns)
@@ -118,6 +177,15 @@ def process_message_with_context(chat_id: str, user_text: str, lang: str = "az")
             args = {}
         try:
             data = run_query_catalogue(args)
+
+            log_keys = ", ".join(list(data.keys())[:10]) if isinstance(data, dict) else type(data).__name__
+            try:
+                cnt_items = len(data.get("items", []) or [])
+                cnt_venues = len(data.get("venues", []) or [])
+                cnt_results = len(data.get("results", []) or [])
+            except Exception:
+                cnt_items = cnt_venues = cnt_results = -1
+            print(f"[EventaAPI] keys=[{log_keys}] counts: items={cnt_items}, venues={cnt_venues}, results={cnt_results}")
         except Exception:
             text = (
                 "Кажется, возникла техническая задержка при поиске площадок. "
