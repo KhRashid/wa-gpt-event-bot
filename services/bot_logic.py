@@ -8,6 +8,44 @@ import json
 client = OpenAI(api_key=OPENAI_API_KEY)
 
 # --- helpers: header + compact list (без картинок) ---
+def _has_name_like(d: dict) -> bool:
+    if not isinstance(d, dict):
+        return False
+    for k in ("name", "title", "venue_name"):
+        if k in d and d[k]:
+            return True
+    return False
+
+def _best_list_of_venues(payload: dict) -> list:
+    """
+    Рекурсивно обходит JSON и ищет список словарей, где >=50% элементов
+    выглядят как карточки площадок (есть поле name/title/venue_name).
+    Если находит несколько — выбирает самый «плотный» и длинный.
+    """
+    best = []
+    best_score = (0.0, 0)  # (доля с name-like, длина)
+
+    def walk(node):
+        nonlocal best, best_score
+        if isinstance(node, dict):
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list) and node:
+            dicts = [x for x in node if isinstance(x, dict)]
+            if dicts:
+                score = sum(1 for x in dicts if _has_name_like(x)) / len(dicts)
+                candidate = (score, len(dicts))
+                if candidate > best_score:
+                    best_score = candidate
+                    best = dicts
+            # продолжаем обход на случай вложенных структур
+            for v in node:
+                walk(v)
+
+    walk(payload)
+    return best
+
+
 def _make_header(filters: dict) -> str:
     guests = filters.get("guest_count")
     budget = filters.get("price_per_guest_max")
@@ -73,6 +111,7 @@ SYSTEM_PROMPT = {
 '''
 
 #--------------------------------------------------------------------------------------
+'''
 def _extract_items(payload: dict) -> list:
     """Пытаемся найти список карточек в разных типичных местах ответа."""
     if not isinstance(payload, dict):
@@ -88,13 +127,32 @@ def _extract_items(payload: dict) -> list:
         if isinstance(c, list) and len(c) > 0:
             return c
     return []
+'''
+def _extract_items(payload: dict) -> list:
+    """
+    Сначала пробуем «типичные» места, потом — глубокий поиск.
+    """
+    if not isinstance(payload, dict):
+        return []
+    # быстрые кандидаты
+    for c in [
+        payload.get("items"),
+        payload.get("venues"),
+        payload.get("results"),
+        (payload.get("data") or {}).get("items"),
+        (payload.get("data") or {}).get("venues"),
+    ]:
+        if isinstance(c, list) and c:
+            return c
+    # глубокий поиск
+    return _best_list_of_venues(payload)
 
 def _get(v: dict, *keys, default=None):
     for k in keys:
         if k in v and v[k] not in (None, ""):
             return v[k]
     return default
-
+'''
 def _format_compact_list(data: dict, max_items: int | None = None) -> str:
     items = _extract_items(data)
     if max_items:
@@ -120,6 +178,45 @@ def _format_compact_list(data: dict, max_items: int | None = None) -> str:
                             default=_get(v.get("price_per_guest", {}) if isinstance(v.get("price_per_guest"), dict) else {}, "max", default="?"))
 
         lines.append(f"{i}. {name} — {district} — {cap_min}–{cap_max} мест — ~{price_min}–{price_max} AZN/гость")
+
+    link = data.get("shortlist_url") or data.get("link") or ""
+    if link:
+        lines.append("")
+        lines.append("Для просмотра каталога выбранных площадок, пожалуйста, перейдите по ссылке:")
+        lines.append(link)
+
+    return "\n".join(lines)
+'''
+
+def _format_compact_list(data: dict, max_items: int | None = None) -> str:
+    items = _extract_items(data) or []
+    if max_items:
+        items = items[:max_items]
+
+    filters_used = data.get("filters_used", {}) or {}
+    lines = [_make_header(filters_used)]
+
+    if not items:
+        # Явно покажем, что ничего не найдено (это лучше, чем пустая секция)
+        lines.append("Пока подходящих площадок не найдено по этим параметрам.")
+    else:
+        for i, v in enumerate(items, 1):
+            name = _get(v, "name", "title", "venue_name", default="?")
+            district = _get(v, "district", "area", "location", default="?")
+
+            # Вместимость
+            cap_min = _get(v, "capacity_min", "min_capacity", "capacityMin",
+                              default=_get(v.get("capacity", {}) if isinstance(v.get("capacity"), dict) else {}, "min", default="?"))
+            cap_max = _get(v, "capacity_max", "max_capacity", "capacityMax",
+                              default=_get(v.get("capacity", {}) if isinstance(v.get("capacity"), dict) else {}, "max", default="?"))
+
+            # Цена/гость
+            price_min = _get(v, "price_per_guest_min", "ppg_min", "priceMin",
+                                default=_get(v.get("price_per_guest", {}) if isinstance(v.get("price_per_guest"), dict) else {}, "min", default="?"))
+            price_max = _get(v, "price_per_guest_max", "ppg_max", "priceMax",
+                                default=_get(v.get("price_per_guest", {}) if isinstance(v.get("price_per_guest"), dict) else {}, "max", default="?"))
+
+            lines.append(f"{i}. {name} — {district} — {cap_min}–{cap_max} мест — ~{price_min}–{price_max} AZN/гость")
 
     link = data.get("shortlist_url") or data.get("link") or ""
     if link:
@@ -177,7 +274,7 @@ def process_message_with_context(chat_id: str, user_text: str, lang: str = "az")
             args = {}
         try:
             data = run_query_catalogue(args)
-
+    
             log_keys = ", ".join(list(data.keys())[:10]) if isinstance(data, dict) else type(data).__name__
             try:
                 cnt_items = len(data.get("items", []) or [])
