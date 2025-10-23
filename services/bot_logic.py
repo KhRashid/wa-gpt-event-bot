@@ -6,6 +6,47 @@ from services.eventa_adapter import run_query_catalogue
 import json
 
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+# --- helpers: header + compact list (без картинок) ---
+def _make_header(filters: dict) -> str:
+    guests = filters.get("guest_count")
+    budget = filters.get("price_per_guest_max")
+    district = filters.get("district") or "Баку"
+    parts = ["Вот подходящие площадки для вашего мероприятия"]
+    if district:
+        parts.append(f"в {district}")
+    if guests:
+        parts.append(f"на {guests} гостей")
+    if budget:
+        parts.append(f"с бюджетом до {budget} манат на человека")
+    return " ".join(parts).strip() + ":"
+
+def _format_compact_list(data: dict, max_items: int | None = None) -> str:
+    items = data.get("items", []) or []
+    if max_items:
+        items = items[:max_items]
+
+    filters_used = data.get("filters_used", {}) or {}
+    lines = [_make_header(filters_used)]
+
+    for i, v in enumerate(items, 1):
+        name = v.get("name", "?")
+        district = v.get("district", "?")
+        cap_min = v.get("capacity_min", "?")
+        cap_max = v.get("capacity_max", "?")
+        price_min = v.get("price_per_guest_min", "?")
+        price_max = v.get("price_per_guest_max", "?")
+        lines.append(f"{i}. {name} — {district} — {cap_min}–{cap_max} мест — ~{price_min}–{price_max} AZN/гость")
+
+    # единая ссылка на каталог/шортлист (кликается как голый URL)
+    link = data.get("shortlist_url") or data.get("link") or ""
+    if link:
+        lines.append("")
+        lines.append("Для просмотра каталога выбранных площадок, пожалуйста, перейдите по ссылке:")
+        lines.append(link)
+
+    return "\n".join(lines)
+
 '''
 SYSTEM_PROMPT = {
     "az": "Sən tədbir təşkilatı üzrə köməkçisən. Qısa, dəqiq və nəzakətli cavablar yaz.",
@@ -49,82 +90,6 @@ def _join_text(resp):
         return resp.choices[0].message.content or ""
     except Exception:
         return ""
-'''
-def process_message_with_context(chat_id: str, user_text: str, lang: str = "az") -> str:
-    # keep history coherent
-    append_user_message(chat_id, user_text)
-    
-    # 1) First pass: announce the tool, let the model decide
-    msgs = build_messages(chat_id, user_text, lang=lang)
-    first = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=msgs,
-        tools=[query_catalogue_tool],
-        tool_choice="auto",
-        temperature=0.3,
-        max_tokens=400,
-    )
-
-    #call = _extract_first_tool_call(first)
-
-    if call and call.function and call.function.name == "query_catalogue":
-        # Parse tool args
-        args = {}
-        try:
-            args = json.loads(call.function.arguments or "{}")
-        except Exception:
-            pass
-
-        # 2) Execute tool (proxy to Eventa-API /search)
-        try:
-            data = run_query_catalogue(args)
-        except Exception as e:
-            # graceful degrade
-            text = (
-                "Кажется, возникла техническая задержка при поиске площадок. "
-                "Попробуйте изменить параметры или повторить запрос чуть позже."
-            )
-            append_assistant_message(chat_id, text)
-            return text
-
-        # 3) Second pass: return tool result to the model to craft final wording
-        msgs2 = msgs + [{
-            "role": "tool",
-            "tool_call_id": call.id,
-            "name": "query_catalogue",
-            "content": json.dumps(data, ensure_ascii=False),
-        }]
-
-        second = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=msgs2,
-            temperature=0.2,
-            max_tokens=700,
-        )
-        final = _join_text(second).strip()
-        if not final:
-            # fallback formatting on backend (very rare)
-            items = data.get("items", [])
-            lines = []
-            for i, v in enumerate(items[:7], 1):
-                cap = f"{v.get('capacity_min','?')}–{v.get('capacity_max','?')} мест"
-                ppg = f"~{v.get('price_per_guest_min','?')}–{v.get('price_per_guest_max','?')} AZN/гость"
-                lines.append(f"{i}) {v.get('name','?')} — {v.get('district','?')} — {cap} — {ppg}\n{v.get('url','')}")
-            flt = data.get("filters_used", {})
-            sl = data.get("shortlist_url")
-            tail = f"\nФильтры: {json.dumps(flt, ensure_ascii=False)}"
-            if sl:
-                tail += f"\nShortlist: {sl}"
-            final = ("\n".join(lines) + tail).strip()
-
-        append_assistant_message(chat_id, final)
-        return final
-
-    # If tool isn't called, return model's text as is
-    final = _join_text(first).strip() or "Уточните, пожалуйста, параметры поиска (гостей, бюджет/гость, район)."
-    append_assistant_message(chat_id, final)
-    return final
-'''
 
 def process_message_with_context(chat_id: str, user_text: str, lang: str = "az") -> str:
     append_user_message(chat_id, user_text)
@@ -161,6 +126,7 @@ def process_message_with_context(chat_id: str, user_text: str, lang: str = "az")
             append_assistant_message(chat_id, text)
             return text
 
+        '''
         # 3) ВТОРОЙ ПРОХОД — ПРАВИЛЬНАЯ СЦЕПКА assistant(tool_calls) → tool(tool_call_id)
         msgs2 = msgs + [
             {
@@ -208,6 +174,11 @@ def process_message_with_context(chat_id: str, user_text: str, lang: str = "az")
                 tail += f"\nShortlist: {sl}"
             final = ("\n".join(lines) + tail).strip()
 
+        '''        
+        
+        # 3) Формируем компактный ответ БЕЗ второго вызова модели
+        final = _format_compact_list(data)  # показываем все объекты, без картинок
+        
         append_assistant_message(chat_id, final)
         return final
 
