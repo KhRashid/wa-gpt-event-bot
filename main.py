@@ -38,7 +38,8 @@ def detect_lang(text: str) -> str:
         return "ru"
     return "az"
 
-ESCALATE_KEYWORDS = {"operator", "оператор", "менеджер", "человек", "специалист"}
+#ESCALATE_KEYWORDS = {"operator", "оператор", "менеджер", "человек", "специалист"}
+ESCALATE_KEYWORDS = {"operator", "оператор"}
 
 # -------------------- Роуты сервиса --------------------
 
