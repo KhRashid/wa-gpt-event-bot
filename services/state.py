@@ -1,20 +1,3 @@
-'''
-# services/state.py
-from google.cloud import firestore
-db = firestore.Client()
-
-def save_message(user, role, text):
-    db.collection("chats").document(user).collection("messages").add({
-        "role": role, "text": text, "ts": firestore.SERVER_TIMESTAMP
-    })
-
-def get_history(user, limit=10):
-    docs = db.collection("chats").document(user).collection("messages")\
-             .order_by("ts", direction=firestore.Query.DESCENDING).limit(limit).stream()
-    items = [{"role": d.to_dict()["role"], "content": d.to_dict()["text"]} for d in docs]
-    return list(reversed(items))
-'''
-
 # services/state.py
 from google.cloud import firestore
 from .db import db
@@ -45,6 +28,8 @@ def get_history(chat_id: str, limit: int = 10):
     items = []
     for d in q.stream():
         m = d.to_dict()
+        if m.get("role") not in ("user", "assistant"):
+            continue  # пропустим operator для LLM
         items.append({"role": m["role"], "content": m["text"]})
     return list(reversed(items))
 
@@ -65,3 +50,13 @@ def close_ticket(chat_id: str, note=None):
         "updatedAt": firestore.SERVER_TIMESTAMP,
     }, merge=True)
     upsert_chat(chat_id, state="BOT")
+
+# === thin wrappers for bot_logic compatibility ===
+
+def append_user_message(chat_id: str, content: str) -> None:
+    """Compatibility wrapper: store user message."""
+    save_message(chat_id, role="user", text=content)
+
+def append_assistant_message(chat_id: str, content: str) -> None:
+    """Compatibility wrapper: store assistant message."""
+    save_message(chat_id, role="assistant", text=content)
