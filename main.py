@@ -27,6 +27,46 @@ provider = get_provider()
 logging.basicConfig(level=logging.INFO)
 log = app.logger
 
+# --- helper: отправка длинных сообщений частями ---
+def chunk_and_send(send_fn, to: str, body: str, chunk_size: int = 1200):
+    """
+    Режем длинный текст на части, чтобы WhatsApp через Twilio не обрезал сообщение.
+    send_fn: функция-отправитель (provider.send_message)
+    to: chat_id (например, '+9945...@c.us')
+    body: полный текст
+    chunk_size: безопасная длина для одного сообщения (1200–1400)
+    """
+    if not body:
+        return True
+
+    parts = []
+    current = []
+    count = 0
+
+    # режем по строкам — аккуратнее для списков
+    for line in body.splitlines():
+        # +1 на учёт '\n'
+        if count + len(line) + 1 > chunk_size and current:
+            parts.append("\n".join(current))
+            current = [line]
+            count = len(line) + 1
+        else:
+            current.append(line)
+            count += len(line) + 1
+
+    if current:
+        parts.append("\n".join(current))
+
+    # отправляем по порядку
+    total = len(parts)
+    ok_all = True
+    for idx, part in enumerate(parts, 1):
+        prefix = f"({idx}/{total})\n" if total > 1 else ""
+        ok = send_fn(to, prefix + part)
+        ok_all = ok_all and bool(ok)
+    return ok_all
+
+
 # -------------------- Вспомогательное --------------------
 
 def detect_lang(text: str) -> str:
@@ -82,7 +122,8 @@ def webhook():
         # ключевые слова для эскалации
         if any(k in (text or "").lower() for k in ESCALATE_KEYWORDS):
             open_ticket(chat_id, reason="keyword")
-            provider.send_message(chat_id, "Переключаю вас на специалиста. Он скоро ответит 🙏")
+            #provider.send_message(chat_id, "Переключаю вас на специалиста. Он скоро ответит 🙏")
+            chunk_and_send(provider.send_message, chat_id, "Переключаю вас на специалиста. Он скоро ответит 🙏")
             return jsonify({"status": "ok"})
 
         # обычный режим: история → GPT → ответ
@@ -91,7 +132,8 @@ def webhook():
         log.info("REPLY: %s", reply)
         save_message(chat_id, "assistant", reply)
 
-        ok = provider.send_message(chat_id, reply)
+        #ok = provider.send_message(chat_id, reply)
+        ok = chunk_and_send(provider.send_message, chat_id, reply, chunk_size=1200)
         log.info("SEND RESULT: %s", ok)
 
         return jsonify({"status": "ok"})
@@ -116,11 +158,13 @@ def operator_reply():
     close = bool(data.get("close", False))
 
     save_message(chat_id, "operator", text)
-    provider.send_message(chat_id, text)
+    #provider.send_message(chat_id, text)
+    chunk_and_send(provider.send_message, chat_id, text)
 
     if close:
         close_ticket(chat_id, note="operator closed")
-        provider.send_message(chat_id, "Спасибо! Диалог закрыт. Если что — пишите.")
+        #provider.send_message(chat_id, "Спасибо! Диалог закрыт. Если что — пишите.")
+        chunk_and_send(provider.send_message, chat_id, "Спасибо! Диалог закрыт. Если что — пишите.")
 
     return jsonify({"ok": True})
 
